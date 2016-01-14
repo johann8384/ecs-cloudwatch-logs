@@ -1,31 +1,40 @@
-FROM ubuntu:trusty
-MAINTAINER Chad Schmutzer <schmutze@amazon.com>
+FROM oraclelinux:7
+MAINTAINER Jonathan Creasy <jcreasy@rgare.com>
 
-ENV DEBIAN_FRONTEND noninteractive
+ENV WORKDIR /opt/awslogs
+ENV LOGSTORAGE /var/log/syslog
 
-RUN apt-get -q update && \
-  apt-get -y -q dist-upgrade && \
-  apt-get -y -q install rsyslog python-setuptools python-pip curl
+ENV AWS_REGION us-west-2
 
-RUN curl https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py -o awslogs-agent-setup.py
+RUN mkdir -p $LOGSTORAGE
+RUN mkdir -p $WORKDIR
+
+WORKDIR $WORKDIR
+
+RUN /usr/bin/curl http://mirror.us.leaseweb.net/epel/7/x86_64/e/epel-release-7-5.noarch.rpm -o $WORKDIR/epel-release-7-5.noarch.rpm
+RUN /usr/bin/yum -y install $WORKDIR/epel-release-7-5.noarch.rpm
+RUN /usr/bin/yum clean all
+RUN /usr/bin/yum -y update
+RUN /usr/bin/yum -y install python python-pip
+RUN /usr/bin/yum -y install rsyslog crontabs which
+RUN /usr/bin/yum install -y supervisor
+
+COPY rsyslog_remote_logs.conf /etc/rsyslog.d/rsyslog_remote_logs.conf
+COPY awslogs.conf $WORKDIR/awslogs.conf
+COPY supervisord.conf /etc/supervisord.d/supervisord-awslogs.ini
+
+RUN chmod 0444 /etc/rsyslog.d/rsyslog_remote_logs.conf
+RUN chmod 0444 $WORKDIR/awslogs.conf
+RUN chmod 0444 /etc/supervisord.d/supervisord-awslogs.ini
 
 RUN sed -i "s/#\$ModLoad imudp/\$ModLoad imudp/" /etc/rsyslog.conf && \
   sed -i "s/#\$UDPServerRun 514/\$UDPServerRun 514/" /etc/rsyslog.conf && \
   sed -i "s/#\$ModLoad imtcp/\$ModLoad imtcp/" /etc/rsyslog.conf && \
   sed -i "s/#\$InputTCPServerRun 514/\$InputTCPServerRun 514/" /etc/rsyslog.conf
+RUN sed -i "s/nodaemon=false/nodaemon=true/" /etc/supervisord.conf
 
-RUN sed -i "s/authpriv.none/authpriv.none,local6.none,local7.none/" /etc/rsyslog.d/50-default.conf
-
-RUN echo "if \$syslogfacility-text == 'local6' and \$programname == 'httpd' then /var/log/httpd-access.log" >> /etc/rsyslog.d/httpd.conf && \
-	echo "if \$syslogfacility-text == 'local6' and \$programname == 'httpd' then ~" >> /etc/rsyslog.d/httpd.conf && \
-	echo "if \$syslogfacility-text == 'local7' and \$programname == 'httpd' then /var/log/httpd-error.log" >> /etc/rsyslog.d/httpd.conf && \
-	echo "if \$syslogfacility-text == 'local7' and \$programname == 'httpd' then ~" >> /etc/rsyslog.d/httpd.conf
-
-COPY awslogs.conf awslogs.conf
-RUN python ./awslogs-agent-setup.py -n -r us-east-1 -c /awslogs.conf
-
-RUN pip install supervisor
-COPY supervisord.conf /usr/local/etc/supervisord.conf
+RUN /usr/bin/curl https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py -o $WORKDIR/awslogs-agent-setup.py
+RUN /usr/bin/python $WORKDIR/awslogs-agent-setup.py -n -r $AWS_REGION -c $WORKDIR/awslogs.conf
 
 EXPOSE 514/tcp 514/udp
-CMD ["/usr/local/bin/supervisord"]
+CMD ["/usr/bin/supervisord"]
