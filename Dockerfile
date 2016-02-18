@@ -36,5 +36,5 @@ RUN sed -i "s/nodaemon=false/nodaemon=true/" /etc/supervisord.conf
 RUN /usr/bin/curl https://s3.amazonaws.com/aws-cloudwatch/downloads/latest/awslogs-agent-setup.py -o $WORKDIR/awslogs-agent-setup.py
 RUN /usr/bin/python $WORKDIR/awslogs-agent-setup.py -n -r $AWS_REGION -c $WORKDIR/awslogs.conf
 
-EXPOSE 514/tcp 514/udp
+EXPOSE 514/tcp 514/udp 8080/tcp
 CMD ["/usr/bin/supervisord"]
